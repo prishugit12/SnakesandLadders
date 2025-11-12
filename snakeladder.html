@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Snake & Ladder — Up to 4 Players</title>
+<style>
+  /* ----------------- Basic theme ----------------- */
+  :root{
+    --bg:#071423; --panel:#071a24; --muted:#9fb7c2; --accent:#00c2a8;
+    --p1:#ff6b6b; --p2:#66f0c0; --p3:#ffd166; --p4:#9a8cff;
+  }
+  *{box-sizing:border-box; font-family:Inter,system-ui,Segoe UI,Roboto,Arial; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; background:linear-gradient(180deg,#04121a,#08202a); color:#e8f6f4}
+
+  /* container */
+  .wrap{width:1100px; max-width:96vw; display:grid; grid-template-columns:360px 1fr; gap:18px; align-items:start}
+  .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border-radius:12px; padding:14px; box-shadow:0 12px 36px rgba(0,0,0,0.6)}
+  .side{height:680px; display:flex; flex-direction:column; gap:12px}
+  h1{margin:0;font-size:18px;color:var(--accent)}
+  p.lead{margin:0;color:var(--muted);font-size:13px}
+
+  /* player selection */
+  .players-list{display:flex; flex-direction:column; gap:8px; margin-top:8px}
+  .player-row{display:flex; gap:10px; align-items:center}
+  .num-select{width:120px}
+  input[type=range]{width:100%}
+  .player-name{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.02);color:#e8f6f4}
+
+  .btn{padding:10px;border-radius:8px;background:linear-gradient(90deg, rgba(0,194,168,0.12), rgba(0,194,168,0.04));border:1px solid rgba(255,255,255,0.03);cursor:pointer;color:#eafff7}
+  .btn.alt{background:transparent;border:1px solid rgba(255,255,255,0.04); color:var(--muted)}
+
+  /* board */
+  .board-wrap{width:720px;height:720px;position:relative}
+  .board{width:100%;height:100%;display:grid;grid-template-columns:repeat(10,1fr);grid-template-rows:repeat(10,1fr);gap:6px;padding:10px;border-radius:12px;background:linear-gradient(180deg,#0b2936,#06202a);box-shadow:inset 0 10px 30px rgba(0,0,0,0.6)}
+  .cell{position:relative;border-radius:8px;padding:6px;font-weight:700;color:#eaf6f1;display:flex;align-items:flex-end;justify-content:flex-end;font-size:12px}
+  .cell:nth-child(odd){background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent)}
+  .num{opacity:.8;color:var(--muted);font-size:11px}
+
+  /* tokens */
+  .tokens{position:absolute; inset:0; pointer-events:none}
+  .token{position:absolute; width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#062a2a; transform:translate(-50%,-50%); box-shadow:0 8px 24px rgba(0,0,0,0.6)}
+  .t1{background:var(--p1); color:#2b0404}
+  .t2{background:var(--p2)}
+  .t3{background:var(--p3); color:#2b1400}
+  .t4{background:var(--p4)}
+
+  /* ladder rails (absolute) will be added dynamically */
+  .svg-layer{position:absolute; inset:0; pointer-events:none; overflow:visible}
+
+  /* controls */
+  .controls{display:flex; flex-direction:column; gap:8px}
+  .dice{height:120px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:900;background:linear-gradient(180deg,#071a26,#05202a);box-shadow:inset 0 -6px 18px rgba(0,0,0,0.6)}
+  .info{color:var(--muted);font-size:13px}
+
+  /* small helpers */
+  .legend{display:flex;gap:8px;flex-wrap:wrap}
+  .legend-item{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+  .color-dot{width:14px;height:14px;border-radius:50%}
+  footer{font-size:12px;color:var(--muted);margin-top:6px}
+
+  @media (max-width:1080px){ .wrap{grid-template-columns:1fr; align-items:center} .board-wrap{width:92vw;height:92vw} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- LEFT: Setup and controls -->
+  <aside class="panel side">
+    <div>
+      <h1>Snake &amp; Ladder</h1>
+      <p class="lead">Up to 4 players — dynamic difficulty scales with player count. Exact roll to reach 100 required.</p>
+    </div>
+
+    <div class="panel" style="padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>Players</strong></div>
+        <div class="info">Select number of players (2–4)</div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <input id="playerCount" type="range" min="2" max="4" value="2" />
+        <div id="playerCountLabel" style="width:32px;text-align:right;font-weight:700">2</div>
+      </div>
+
+      <div class="players-list" id="playersList" style="margin-top:10px"></div>
+
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn" id="startBtn">Start Game</button>
+        <button class="btn alt" id="resetBtn">Reset</button>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:12px; margin-top:auto">
+      <div class="controls">
+        <div class="dice" id="dice">—</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="rollBtn">Roll Dice</button>
+          <button class="btn alt" id="nextTurnBtn">End Turn</button>
+        </div>
+        <div class="info" id="gameInfo" style="margin-top:8px">Press Start to begin.</div>
+        <div style="margin-top:10px">
+          <div class="legend">
+            <div class="legend-item"><div class="color-dot" style="background:var(--p1)"></div> P1</div>
+            <div class="legend-item"><div class="color-dot" style="background:var(--p2)"></div> P2</div>
+            <div class="legend-item" id="legendP3" style="display:none"><div class="color-dot" style="background:var(--p3)"></div> P3</div>
+            <div class="legend-item" id="legendP4" style="display:none"><div class="color-dot" style="background:var(--p4)"></div> P4</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="panel" style="text-align:center">Exact roll required to reach square 100. Snakes & ladders increase with players.</footer>
+  </aside>
+
+  <!-- RIGHT: Board -->
+  <main class="panel" style="padding:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong>Board</strong></div>
+      <div class="info" id="status">Waiting...</div>
+    </div>
+
+    <div class="board-wrap" style="margin-top:12px">
+      <div id="board" class="board" aria-hidden="false"></div>
+      <svg id="svgLayer" class="svg-layer" viewBox="0 0 800 800" preserveAspectRatio="none"></svg>
+      <div id="tokens" class="tokens"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ----------------- Snake & Ladder (single-file modular) -----------------
+   Features:
+   - Single index.html (no extra packages)
+   - Up to 4 players
+   - Dynamic complexity: number of snakes/ladders scales with player count
+   - Exact roll required to land on 100
+   - Manual dice roll (click the Roll Dice button)
+   - Simple token animation (CSS position transitions)
+-----------------------------------------------------------------------*/
+
+/* ---------- Utility ---------- */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+
+/* ---------- Elements ---------- */
+const playerCountEl = $('#playerCount');
+const playerCountLabel = $('#playerCountLabel');
+const playersList = $('#playersList');
+const startBtn = $('#startBtn');
+const resetBtn = $('#resetBtn');
+const boardEl = $('#board');
+const svgLayer = $('#svgLayer');
+const tokensEl = $('#tokens');
+const diceEl = $('#dice');
+const rollBtn = $('#rollBtn');
+const nextTurnBtn = $('#nextTurnBtn');
+const gameInfo = $('#gameInfo');
+const statusEl = $('#status');
+const legendP3 = $('#legendP3'), legendP4 = $('#legendP4');
+
+/* ---------- State ---------- */
+const SIZE = 10;
+const TOTAL = SIZE * SIZE;
+let players = []; // [{name, color, pos, el, active}]
+let currentPlayer = 0;
+let rolling = false;
+let started = false;
+let cellCenters = []; // 1..100 mapping to center coords
+let snakesAndLadders = {}; // start -> end mapping
+
+/* ---------- Colors for tokens ---------- */
+const COLORS = ['var(--p1)','var(--p2)','var(--p3)','var(--p4)'];
+
+/* ---------- Build player inputs based on slider ---------- */
+function buildPlayerInputs(count){
+  playersList.innerHTML = '';
+  for(let i=0;i<count;i++){
+    const row = document.createElement('div');
+    row.className = 'player-row';
+    const name = document.createElement('input');
+    name.className = 'player-name';
+    name.value = `Player ${i+1}`;
+    name.placeholder = `Player ${i+1}`;
+    const colorDot = document.createElement('div');
+    colorDot.style.width = '28px';
+    colorDot.style.height = '28px';
+    colorDot.style.borderRadius = '6px';
+    colorDot.style.background = COLORS[i];
+    row.appendChild(name);
+    row.appendChild(colorDot);
+    playersList.appendChild(row);
+  }
+  legendP3.style.display = count>=3 ? 'flex' : 'none';
+  legendP4.style.display = count>=4 ? 'flex' : 'none';
+}
+
+/* ---------- Board construction ---------- */
+function buildBoard(){
+  boardEl.innerHTML = '';
+  cellCenters = [];
+  for(let i=0;i<TOTAL;i++){
+    const c = document.createElement('div');
+    c.className = 'cell';
+    boardEl.appendChild(c);
+  }
+
+  // compute numbering and centers (after DOM layout)
+  requestAnimationFrame(()=> {
+    let number = 1;
+    for(let row=SIZE-1; row>=0; row--){
+      const leftToRight = ((SIZE-1-row) % 2 === 0);
+      for(let col=0; col<SIZE; col++){
+        const gridCol = leftToRight ? col : (SIZE-1-col);
+        const cellIndex = row * SIZE + gridCol;
+        const cellNode = boardEl.children[cellIndex];
+        cellNode.innerHTML = `<div class="num">${number}</div>`;
+        const parentRect = boardEl.getBoundingClientRect();
+        const r = cellNode.getBoundingClientRect();
+        const cx = (r.left - parentRect.left) + r.width/2;
+        const cy = (r.top - parentRect.top) + r.height/2;
+        cellCenters[number] = {cx, cy, node: cellNode};
+        number++;
+      }
+    }
+    // initial render of snakes & ladders
+    drawSnakesAndLadders();
+    placeTokens();
+  });
+}
+
+/* ---------- Dynamic complexity: generate snakes & ladders ---------- */
+function generateJumps(playerCount){
+  // base difficulty
+  const basePairs = 6; // base number of special jumps (approx)
+  const extra = (playerCount - 2) * 2; // add more with more players
+  const desiredPairs = basePairs + extra;
+
+  const impossible = new Set([1,TOTAL]);
+  const pairs = {};
+  // We'll create desiredPairs pairs (some snakes, some ladders)
+  let attempts = 0;
+  while(Object.keys(pairs).length < desiredPairs && attempts < 1000){
+    attempts++;
+    const a = rand(2, TOTAL-1);
+    const b = rand(2, TOTAL-1);
+    if(a === b) continue;
+    // avoid very small jumps
+    if(Math.abs(a-b) < 8) continue;
+    // attacks: prefer a != 1,100 and not overlapping
+    if(impossible.has(a) || impossible.has(b)) continue;
+    // ensure not mapping existing or overlapping ranges (simple check)
+    if(pairs[a] || pairs[b]) continue;
+    // allow either a->b or b->a, but we prefer ladder (a<b) or snake (a>b)
+    // choose direction randomly but with a bias: 55% ladders
+    let start, end;
+    if(Math.random() < 0.55){
+      start = Math.min(a,b);
+      end = Math.max(a,b);
+    } else {
+      start = Math.max(a,b);
+      end = Math.min(a,b);
+    }
+    // re-check
+    if(start === 1 || end === TOTAL) continue;
+    // disallow chain start or ends on previously used numbers
+    if(Object.keys(pairs).includes(String(start)) || Object.values(pairs).includes(end)) continue;
+    // create
+    pairs[start] = end;
+    impossible.add(start);
+    impossible.add(end);
+  }
+  return pairs;
+}
+
+/* ---------- Draw snakes & ladders visually ---------- */
+function drawSnakesAndLadders(){
+  svgLayer.innerHTML = '';
+  // draw ladders as rectangular rails and snakes as curved lines (simple)
+  Object.entries(snakesAndLadders).forEach(([sStr,eStr])=>{
+    const s = Number(sStr), e = Number(eStr);
+    const a = cellCenters[s], b = cellCenters[e];
+    if(!a || !b) return;
+    // ladder (s<e)
+    if(s < e){
+      const x1 = a.cx, y1 = a.cy, x2 = b.cx, y2 = b.cy;
+      const midx = (x1+x2)/2, midy = (y1+y2)/2;
+      const len = Math.hypot(x2-x1, y2-y1);
+      const angle = Math.atan2(y2-y1, x2-x1) * 180/Math.PI;
+      // create a div overlay for ladder
+      const ladder = document.createElement('div');
+      ladder.style.position='absolute';
+      ladder.style.left = (midx - len/2) + 'px';
+      ladder.style.top = (midy - 6) + 'px';
+      ladder.style.width = len + 'px';
+      ladder.style.height = '12px';
+      ladder.style.borderRadius = '8px';
+      ladder.style.transform = `rotate(${angle}deg)`;
+      ladder.style.background = 'linear-gradient(90deg,#ffd58a,#ffb84d)';
+      ladder.style.boxShadow = '0 8px 18px rgba(0,0,0,0.45)';
+      boardEl.appendChild(ladder);
+      // rails
+      const railA = document.createElement('div');
+      railA.style.width='6px'; railA.style.height='100%'; railA.style.position='absolute'; railA.style.left='6px'; railA.style.borderRadius='4px';
+      railA.style.background='linear-gradient(180deg,#c07b2b,#ffd28a)'; ladder.appendChild(railA);
+      const railB = railA.cloneNode(); railB.style.left = (len - 12) + 'px'; ladder.appendChild(railB);
+    } else {
+      // snake: draw svg path
+      const x1 = a.cx, y1 = a.cy, x2 = b.cx, y2 = b.cy;
+      const dx = x2 - x1, dy = y2 - y1;
+      const cx1 = x1 + dx * 0.35, cy1 = y1 - 40;
+      const cx2 = x1 + dx * 0.65, cy2 = y1 + dy * 0.4 + 40;
+      const pathD = `M ${x1} ${y1} C ${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
+      const ns = 'http://www.w3.org/2000/svg';
+      const path = document.createElementNS(ns,'path');
+      path.setAttribute('d', pathD);
+      path.setAttribute('stroke','#9b2e2e');
+      path.setAttribute('stroke-width','12');
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke-linecap','round');
+      path.setAttribute('opacity','0.95');
+      svgLayer.appendChild(path);
+      const head = document.createElementNS(ns,'circle');
+      head.setAttribute('cx', x1); head.setAttribute('cy', y1); head.setAttribute('r',8);
+      head.setAttribute('fill','#7f2b2b');
+      svgLayer.appendChild(head);
+    }
+  });
+}
+
+/* ---------- Tokens creation & placement ---------- */
+function placeTokens(){
+  tokensEl.innerHTML = '';
+  players.forEach((p, idx) => {
+    p.el = document.createElement('div');
+    p.el.className = 'token t' + (idx+1);
+    p.el.textContent = (idx+1);
+    p.el.style.left = '20px';
+    p.el.style.top = (boardEl.clientHeight - 20) + 'px';
+    p.el.style.transition = 'left 600ms cubic-bezier(.2,.9,.2,1), top 600ms';
+    tokensEl.appendChild(p.el);
+  });
+}
+
+/* ---------- Set token position to board number (1..100 or 0) ---------- */
+function setTokenPos(idx, num){
+  const p = players[idx];
+  p.pos = num;
+  if(num === 0){
+    // place near bottom-left
+    p.el.style.left = '20px';
+    p.el.style.top = (boardEl.clientHeight - 20) + 'px';
+    return;
+  }
+  const c = cellCenters[num];
+  if(!c) return;
+  // offset to avoid full overlap
+  const offsets = [
+    {x:-12,y:10},
+    {x:12,y:-6},
+    {x:-12,y:-12},
+    {x:12,y:12}
+  ];
+  const off = offsets[idx % offsets.length];
+  p.el.style.left = (c.cx + off.x) + 'px';
+  p.el.style.top = (c.cy + off.y) + 'px';
+}
+
+/* ---------- Dice behavior ---------- */
+function setDice(val){
+  diceEl.textContent = val === null ? '—' : val;
+}
+
+/* ---------- Game logic: move with step animation ---------- */
+function animateMove(playerIdx, steps, callback){
+  if(steps.length === 0){ callback(); return; }
+  let i = 0;
+  function step(){
+    setTokenPos(playerIdx, steps[i]);
+    i++;
+    if(i < steps.length){
+      setTimeout(step, 300);
+    } else {
+      setTimeout(callback, 350);
+    }
+  }
+  step();
+}
+
+/* ---------- Turn handling ---------- */
+function rollAction(){
+  if(!started) return;
+  if(rolling) return;
+  rolling = true;
+  rollBtn.disabled = true;
+  const val = rand(1,6);
+  setDice(val);
+  // compute new pos based on exact rule: must not pass 100, otherwise no move
+  const p = players[currentPlayer];
+  let target = p.pos + val;
+  if(target > TOTAL){
+    // no move
+    gameInfo.textContent = `${p.name} rolled ${val} but needs exact roll to finish.`;
+    rolling = false;
+    rollBtn.disabled = false;
+    return;
+  }
+  // gather steps:
+  const steps = [];
+  for(let s = p.pos + 1; s <= target; s++) steps.push(s);
+  animateMove(currentPlayer, steps, ()=>{
+    // landed on target
+    p.pos = target;
+    // check jump
+    if(snakesAndLadders[p.pos]){
+      const dest = snakesAndLadders[p.pos];
+      gameInfo.textContent = `${p.name} hit ${p.pos} → ${dest}`;
+      // animate jump
+      animateMove(currentPlayer, [dest], ()=>{
+        p.pos = dest;
+        setTokenPos(currentPlayer, p.pos);
+        finalizeMove(val);
+      });
+    } else {
+      finalizeMove(val);
+    }
+  });
+}
+
+function finalizeMove(rollVal){
+  const p = players[currentPlayer];
+  setTokenPos(currentPlayer, p.pos);
+  if(p.pos === TOTAL){
+    statusEl.textContent = `${p.name} wins! 🎉`;
+    gameInfo.textContent = 'Game over. Reset to play again.';
+    rollBtn.disabled = true;
+    started = false;
+    rolling = false;
+    return;
+  }
+  // if roll was 6, same player goes again:
+  if(rollVal === 6){
+    gameInfo.textContent = `${p.name} rolled a 6 — go again!`;
+  } else {
+    // move to next active player
+    currentPlayer = (currentPlayer + 1) % players.length;
+    gameInfo.textContent = `Turn: ${players[currentPlayer].name}`;
+  }
+  updateStatus();
+  rolling = false;
+  rollBtn.disabled = false;
+}
+
+function endTurn(){
+  if(!started) return;
+  currentPlayer = (currentPlayer + 1) % players.length;
+  gameInfo.textContent = `Turn: ${players[currentPlayer].name}`;
+  updateStatus();
+}
+
+/* ---------- Start & Reset ---------- */
+function startGame(){
+  const count = Number(playerCountEl.value);
+  players = [];
+  // read names
+  const inputs = playersList.querySelectorAll('.player-name');
+  for(let i=0;i<count;i++){
+    const name = inputs[i] ? inputs[i].value.trim() || `Player ${i+1}` : `Player ${i+1}`;
+    players.push({name, color:COLORS[i], pos:0, el:null});
+  }
+  // generate dynamic snakes & ladders
+  snakesAndLadders = generateJumps(players.length);
+  // build board and tokens
+  buildBoard();
+  placeTokens();
+  players.forEach((p, idx) => setTokenPos(idx, 0));
+  currentPlayer = 0;
+  started = true;
+  rolling = false;
+  setDice(null);
+  rollBtn.disabled = false;
+  gameInfo.textContent = `Game started. ${players[0].name} goes first.`;
+  updateStatus();
+}
+
+function resetGame(){
+  started = false;
+  rolling = false;
+  players = [];
+  boardEl.innerHTML = '';
+  svgLayer.innerHTML = '';
+  tokensEl.innerHTML = '';
+  setDice(null);
+  statusEl.textContent = 'Waiting...';
+  gameInfo.textContent = 'Press Start to begin.';
+  // rebuild UI inputs without starting
+  buildPlayerInputs(Number(playerCountEl.value));
+  buildBoard();
+}
+
+/* ---------- Update status UI ---------- */
+function updateStatus(){
+  statusEl.textContent = started ? `Turn: ${players[currentPlayer].name}` : 'Waiting...';
+}
+
+/* ---------- Event wiring ---------- */
+playerCountEl.addEventListener('input', ()=>{
+  playerCountLabel.textContent = playerCountEl.value;
+  buildPlayerInputs(Number(playerCountEl.value));
+});
+startBtn.addEventListener('click', startGame);
+resetBtn.addEventListener('click', resetGame);
+rollBtn.addEventListener('click', rollAction);
+nextTurnBtn.addEventListener('click', endTurn);
+
+/* ---------- Initialize UI ---------- */
+playerCountLabel.textContent = playerCountEl.value;
+buildPlayerInputs(Number(playerCountEl.value));
+buildBoard();
+setDice(null);
+</script>
+</body>
+</html>
